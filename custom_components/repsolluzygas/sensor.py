@@ -2,7 +2,7 @@
 from .repsol_api import RepsolLuzYGasSensor
 from homeassistant.helpers.entity import Entity
 from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CURRENCY_EURO, POWER_KILO_WATT
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from datetime import timedelta
@@ -16,7 +16,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 _LOGGER = logging.getLogger(__name__)
-
 SCAN_INTERVAL = timedelta(minutes=120)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
@@ -25,30 +24,22 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     password = config[CONF_PASSWORD]
 
     client = RepsolLuzYGasSensor(username, password)
-    add_entities([RepsolLuzYGazEntity(client, 'Amount', 'amount', '€', True),
-                RepsolLuzYGazEntity(client, 'Consumption', 'consumption', 'kWh',  False),
-                RepsolLuzYGazEntity(client, 'Total Days', 'totalDays', 'days',  False),
-                RepsolLuzYGazEntity(client, 'Amount Variable', 'amountVariable', '€',  False),
-                RepsolLuzYGazEntity(client, 'Amount Fixed', 'amountFixed', '€',  False),
-                RepsolLuzYGazEntity(client, 'Average daily amount', 'averageAmount', '€',  False),
-                RepsolLuzYGazEntity(client, 'Number of contracts', 'number_of_contracts', '',  False),
-                RepsolLuzYGazEntity(client, 'Last invoice', 'last_invoice_amount', '€',  False),
-                RepsolLuzYGazEntity(client, 'Last invoice was paid', 'last_invoice_paid', '',  False)], True)
-                
-
+    add_entities([RepsolLuzYGazEntity(client, 'Consumo acumulado', 'consumption', POWER_KILO_WATT, 'mdi:home-lightning-bolt', True, True),
+                  RepsolLuzYGazEntity(client, 'Last invoice', 'last_invoice_amount', CURRENCY_EURO, 'mdi:receipt', False, False),
+                  RepsolLuzYGazEntity(client, 'Last invoice was paid', 'last_invoice_paid', '', 'mdi:receipt', False, False)], True)
 
 class RepsolLuzYGazEntity(Entity):
 
-    def __init__(self, client, name, variable, unit, is_master):
-
+    def __init__(self, client, name, variable, unit, icon, is_master, has_attr):
         _LOGGER.debug('Initalizing Entity {}'.format(name))
-
         self.client = client
         self._name = name
         self.variable = variable
         self.is_master = is_master
+        self.has_attr = has_attr
         self.unit = unit
-
+        self._icon = icon
+        self._entity_id = 'sensor.repsol_' + name
 
     @property
     def name(self):
@@ -56,10 +47,18 @@ class RepsolLuzYGazEntity(Entity):
         return 'Repsol - {}'.format(self._name)
 
     @property
+    def unique_id(self):
+        return self._entity_id
+
+    @property
     def state(self):
         """Return the state of the sensor."""
-        data = self.client.data.get(self.variable, 0)
-        _LOGGER.debug('{} has value: {}'.format(self._name, data))
+        if self.client is not None:
+            data = self.client.data.get(self.variable, 0)
+            _LOGGER.debug('{} has value: {}'.format(self._name, data))
+        else:
+            data = None
+            _LOGGER.debug('{} has not value'.format(self._name))
         return data
 
     @property
@@ -67,7 +66,21 @@ class RepsolLuzYGazEntity(Entity):
         """Return the unit of measurement."""
         return self.unit
 
+    @property
+    def icon(self):
+        """Return the icon to display."""
+        return self._icon
+
     def update(self):
         """ This is the updater  """
         if self.is_master:
             self.client.update()
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        if self.client is not None and self.has_attr:
+            attr = self.client.data.get('attributes_' + self.variable, 0)
+        else:
+            attr = None
+        return attr
